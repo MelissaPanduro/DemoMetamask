@@ -1,127 +1,132 @@
-import { useState } from "react";
-import { ethers } from "ethers";
+// Importamos React hooks y ethers.js
+import { useState } from "react";  // Hook para manejar el estado en React
+import { ethers } from "ethers";  // Biblioteca para interactuar con la blockchain de Ethereum
 
 function App() {
+  // Creamos estados para almacenar información de la wallet y transacción
+  const [account, setAccount] = useState(null);
+  const [balance, setBalance] = useState(null);
+  const [recipient, setRecipient] = useState("");
+  const [amount, setAmount] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // Estados para almacenar información de la wallet y datos de transacción
-  const [account, setAccount] = useState(null); // Almacena la dirección de la cuenta conectada
-  const [balance, setBalance] = useState(null); // Almacena el saldo de ETH de la cuenta
-  const [recipient, setRecipient] = useState(""); // Almacena la dirección del destinatario para envío
-  const [amount, setAmount] = useState(""); // Almacena la cantidad de ETH a enviar
-
-  // Conectar a MetaMask (siempre solicita la conexión)
+  // Función para conectar la wallet de MetaMask
   const connectWallet = async () => {
-    if (window.ethereum) { // Verifica si MetaMask está instalado en el navegador
+    // Verificamos si MetaMask está instalado en el navegador
+    if (window.ethereum) {
       try {
-        // Crea un proveedor de Ethereum basado en el objeto window.ethereum inyectado por MetaMask
+        setLoading(true);
+        // Creamos un proveedor de Ethereum usando ethers.js
         const provider = new ethers.BrowserProvider(window.ethereum);
 
-        // Solicita acceso a las cuentas del usuario (abre la ventana de MetaMask)
+        // Solicitamos a MetaMask que nos dé acceso a las cuentas del usuario
         const accounts = await provider.send("eth_requestAccounts", []);
-        setAccount(accounts[0]); // Guarda la primera cuenta en el estado
 
-        // Obtiene el saldo de ETH de la cuenta conectada
+        // Guardamos la primera cuenta obtenida en el estado
+        setAccount(accounts[0]);
+
+        // Obtenemos y guardamos el saldo de la cuenta
         const balance = await provider.getBalance(accounts[0]);
-        setBalance(ethers.formatEther(balance)); // Convierte el saldo de wei a ETH y lo guarda
+        setBalance(ethers.formatEther(balance));
+        
+        setLoading(false);
       } catch (error) {
-        console.error("Error al conectar MetaMask", error); // Manejo de errores
+        // Capturamos y mostramos cualquier error en la consola
+        console.error("Error al conectar MetaMask", error);
+        setLoading(false);
       }
     } else {
-      alert("MetaMask no está instalado."); // Muestra alerta si MetaMask no está instalado
+      // Si MetaMask no está instalado, mostramos un mensaje de alerta
+      alert("MetaMask no está instalado.");
     }
   };
 
-  // Desconectar wallet - simulada
-  const disconnectWallet = async () => {
-    // Limpia todos los estados para simular una desconexión
-    setAccount(null);
-    setBalance(null);
-    setRecipient("");
-    setAmount("");
-
-    // Muestra mensaje explicativo al usuario (la desconexión real debe hacerse desde MetaMask)
-    alert("La desconexión se ha realizado en la aplicación. Para desconectar completamente, cierra la extensión MetaMask o cambia la cuenta en MetaMask. ¡Por favor, conéctate de nuevo!");
-  };
-
-  // Enviar ETH a otra dirección
+  // Función para enviar ETH a otra dirección
   const sendEth = async () => {
-    if (!window.ethereum) { // Verifica nuevamente si MetaMask está instalado
+    if (!window.ethereum) {
       alert("MetaMask no está instalado.");
       return;
     }
 
-    if (!recipient || !amount) { // Valida que se hayan ingresado los datos necesarios
+    if (!recipient || !amount) {
       alert("Por favor, ingresa una dirección válida y una cantidad.");
       return;
     }
 
     try {
-      // Configura de nuevo el proveedor para la transacción
+      setLoading(true);
       const provider = new ethers.BrowserProvider(window.ethereum);
-      // Obtiene el signer (firmante) que puede autorizar transacciones
       const signer = await provider.getSigner();
 
-      // Envía la transacción con los parámetros especificados
       const tx = await signer.sendTransaction({
-        to: recipient, // Dirección del destinatario
-        value: ethers.parseEther(amount), // Convierte la cantidad de ETH a wei (unidad básica)
+        to: recipient,
+        value: ethers.parseEther(amount),
       });
 
-      // Muestra confirmación con el hash de la transacción
       alert(`Transacción enviada! Hash: ${tx.hash}`);
-      console.log("Transacción:", tx); // Log de la transacción completa para debugging
+      console.log("Transacción:", tx);
 
-      // Actualiza el saldo tras la transacción para reflejar el nuevo balance
+      // Actualizar saldo después de la transacción
       const updatedBalance = await provider.getBalance(account);
       setBalance(ethers.formatEther(updatedBalance));
 
-      // Limpia los campos del formulario tras enviar
+      // Limpiar los inputs
       setRecipient("");
       setAmount("");
+      setLoading(false);
     } catch (error) {
-      // Manejo de errores durante la transacción
       console.error("Error al enviar ETH", error);
       alert("Error al enviar ETH: " + error.message);
+      setLoading(false);
     }
   };
 
-  // Interfaz de usuario (UI) renderizada con JSX
   return (
     <div style={styles.container}>
+      {/* Título de la aplicación */}
       <h1 style={styles.title}>Conectar MetaMask</h1>
 
-      {account ? ( // Renderizado condicional: si hay cuenta conectada muestra info y controles
+      {/* Mostrar interfaz según si hay cuenta conectada o no */}
+      {account ? (
         <div style={styles.walletInfo}>
+          {/* Información de la cuenta */}
           <p style={styles.accountInfo}>Cuenta: {account}</p>
           <p style={styles.accountInfo}>Saldo: {balance} ETH</p>
 
+          {/* Formulario para enviar ETH */}
           <h2 style={styles.subtitle}>Enviar ETH</h2>
           <input
             type="text"
             placeholder="Dirección del destinatario"
             value={recipient}
-            onChange={(e) => setRecipient(e.target.value)} // Actualiza el estado al escribir
+            onChange={(e) => setRecipient(e.target.value)}
             style={styles.input}
           />
           <input
             type="number"
             placeholder="Cantidad en ETH"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)} // Actualiza el estado al escribir
+            onChange={(e) => setAmount(e.target.value)}
             style={styles.input}
           />
-          <button onClick={sendEth} style={styles.buttonSend}>
-            Enviar ETH
-          </button>
-          <button onClick={disconnectWallet} style={styles.buttonDisconnect}>
-            Desconectar
+          <button 
+            onClick={sendEth} 
+            style={styles.buttonSend}
+            disabled={loading}
+          >
+            {loading ? "Procesando..." : "Enviar ETH"}
           </button>
         </div>
-      ) : ( // Si no hay cuenta conectada, muestra solo el botón de conexión
+      ) : (
         <div>
-          <p style={styles.reconnectMessage}>¡Necesitas conectarte a MetaMask para continuar!</p>
-          <button onClick={connectWallet} style={styles.buttonConnect}>
-            Conectar Wallet
+          {/* Mensaje y botón para conectar */}
+          <p style={styles.message}>Conecta tu wallet para enviar ETH</p>
+          <button 
+            onClick={connectWallet} 
+            style={styles.buttonConnect}
+            disabled={loading}
+          >
+            {loading ? "Conectando..." : "Conectar Wallet"}
           </button>
         </div>
       )}
@@ -129,81 +134,78 @@ function App() {
   );
 }
 
-// Estilos 
+// Estilos para la interfaz
 const styles = {
   container: {
     textAlign: "center", 
-    marginTop: "50px", 
-    fontFamily: "'Arial', sans-serif",
-    backgroundColor: "#f3f4f6",
-    padding: "20px",
-    borderRadius: "10px",
-    boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)", 
-    maxWidth: "400px",
-    margin: "auto",
+    marginTop: "50px",
+    fontFamily: "Arial, sans-serif",
+    backgroundColor: "#f5f7fa",
+    padding: "30px",
+    borderRadius: "12px",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+    maxWidth: "450px",
+    margin: "0 auto"
   },
   title: {
-    fontSize: "24px", 
-    color: "#333", 
-  },
-  subtitle: {
-    fontSize: "20px",
-    color: "#555", 
-    marginTop: "15px",
+    fontSize: "28px",
+    color: "#333",
+    marginBottom: "20px"
   },
   walletInfo: {
-    marginTop: "20px", 
+    marginTop: "25px"
   },
   accountInfo: {
-    fontSize: "16px", 
-    color: "#555", 
-    marginBottom: "10px", 
+    fontSize: "16px",
+    color: "#555",
+    wordBreak: "break-all",
+    marginBottom: "10px"
+  },
+  subtitle: {
+    fontSize: "22px",
+    color: "#444",
+    marginTop: "20px",
+    marginBottom: "15px"
   },
   input: {
     width: "100%",
-    padding: "10px",
-    marginTop: "10px",
-    borderRadius: "5px",
-    border: "1px solid #ccc", 
+    padding: "12px",
+    marginTop: "12px",
+    borderRadius: "6px",
+    border: "1px solid #ddd",
     fontSize: "16px",
+    boxSizing: "border-box"
+  },
+  message: {
+    fontSize: "18px",
+    color: "#666",
+    marginBottom: "20px"
   },
   buttonConnect: {
-    padding: "10px 20px", 
-    fontSize: "16px", 
-    backgroundColor: "#4CAF50",
-    color: "white", 
-    border: "none", 
-    borderRadius: "5px", 
-    cursor: "pointer", 
-    transition: "background-color 0.3s",
-  },
-  buttonDisconnect: {
-    padding: "10px 20px",
-    fontSize: "16px", 
-    marginTop: "10px", 
-    backgroundColor: "#d9534f", 
-    color: "white", 
-    border: "none", 
-    borderRadius: "5px", 
-    cursor: "pointer", 
-    transition: "background-color 0.3s", 
-  },
-  buttonSend: {
-    padding: "10px 20px", 
+    padding: "12px 24px",
     fontSize: "16px",
-    marginTop: "10px", 
-    backgroundColor: "#007bff",
+    backgroundColor: "#4CAF50",
     color: "white",
     border: "none",
-    borderRadius: "5px", 
-    cursor: "pointer", 
-    transition: "background-color 0.3s", 
+    borderRadius: "6px",
+    cursor: "pointer",
+    transition: "background-color 0.3s",
+    fontWeight: "bold"
   },
-  reconnectMessage: {
-    fontSize: "16px", 
-    color: "#ff6347",
-    marginTop: "10px", 
-  },
+  buttonSend: {
+    padding: "12px 24px",
+    fontSize: "16px",
+    marginTop: "15px",
+    backgroundColor: "#2196F3",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    cursor: "pointer",
+    transition: "background-color 0.3s",
+    fontWeight: "bold",
+    width: "100%"
+  }
 };
 
-export default App; // Exporta el componente para usarlo en la aplicación
+// Exportamos el componente para poder usarlo en la aplicación
+export default App;
