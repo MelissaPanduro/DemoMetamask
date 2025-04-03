@@ -1,47 +1,176 @@
-// Importamos React hooks y ethers.js
-import { useState } from "react";  // Hook para manejar el estado en React
-import { ethers } from "ethers";  // Biblioteca para interactuar con la blockchain de Ethereum
+import { useState, useEffect, useCallback, useMemo } from "react"; // Importamos los hooks de React
+import { ethers } from "ethers"; // Importamos ethers para interactuar con la blockchain
 
 function App() {
-  // Creamos estados para almacenar información de la wallet y transacción
+  // Definimos estados para manejar la información de la wallet y transacciones
   const [account, setAccount] = useState(null);
   const [balance, setBalance] = useState(null);
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
+  const [currentNetwork, setCurrentNetwork] = useState(null);
+  const [isNetworkSwitching, setIsNetworkSwitching] = useState(false);
+  const [selectedNetwork, setSelectedNetwork] = useState(null);
 
-  // Función para conectar la wallet de MetaMask
+  // Definimos las redes disponibles y usamos useMemo para evitar recrearlas en cada renderizado
+  const networks = useMemo(() => [
+    {
+      name: "Ethereum Mainnet",
+      chainId: "0x1",
+      symbol: "ETH",
+      rpcUrl: "https://mainnet.infura.io/v3/your-infura-key"
+    },
+    {
+      name: "Sepolia Testnet",
+      chainId: "0xaa36a7",
+      symbol: "SepoliaETH",
+      rpcUrl: "https://sepolia.infura.io/v3/your-infura-key"
+    },
+    {
+      name: "Holesky Testnet",
+      chainId: "0x4268",
+      symbol: "ETH",
+      rpcUrl: "https://holesky.infura.io/v3/your-infura-key"
+    },
+  ], []);
+
+  // Verifica la red actual y obtiene el saldo de la cuenta conectada
+  const checkNetwork = useCallback(async () => {
+    try {
+      if (!window.ethereum || !account) return;
+      
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const network = networks.find(net => net.chainId === chainId);
+      setCurrentNetwork(network ? network.name : `Red Desconocida (${chainId})`);
+      
+      if (account) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const balance = await provider.getBalance(account);
+        setBalance(ethers.formatEther(balance));
+      }
+    } catch (error) {
+      console.error("Error al verificar la red", error);
+    }
+  }, [account, networks]); 
+
+  // Ejecuta checkNetwork al detectar cambios en la cuenta o red
+  useEffect(() => {
+    if (window.ethereum && account) {
+      checkNetwork();
+      
+      const handleChainChanged = () => {
+        checkNetwork();
+      };
+      
+      window.ethereum.on('chainChanged', handleChainChanged);
+      
+      return () => {
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
+      };
+    }
+  }, [account, checkNetwork]);
+
+
+  // Cambia la red de MetaMask
+  const switchNetwork = async (chainId) => {
+    if (!window.ethereum) {
+      alert("MetaMask no está instalado.");
+      return;
+    }
+
+    try {
+      setIsNetworkSwitching(true);
+      
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId }],
+      });
+      
+      await checkNetwork();
+      
+    } catch (switchError) {
+      if (switchError.code === 4902) {
+        try {
+          const networkDetails = networks.find(net => net.chainId === chainId);
+          
+          if (!networkDetails) {
+            throw new Error("Detalles de la red no encontrados");
+          }
+          
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [
+              {
+                chainId: networkDetails.chainId,
+                chainName: networkDetails.name,
+                nativeCurrency: {
+                  name: networkDetails.symbol,
+                  symbol: networkDetails.symbol,
+                  decimals: 18
+                },
+                rpcUrls: [networkDetails.rpcUrl],
+                blockExplorerUrls: networkDetails.blockExplorer ? [networkDetails.blockExplorer] : null,
+              },
+            ],
+          });
+          
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId }],
+          });
+          
+          await checkNetwork();
+          
+        } catch (addError) {
+          console.error("Error al añadir la red:", addError);
+          alert("No se pudo añadir la red: " + addError.message);
+        }
+      } else {
+        console.error("Error al cambiar la red:", switchError);
+        alert("Error al cambiar la red: " + switchError.message);
+      }
+    } finally {
+      setIsNetworkSwitching(false);
+    }
+  };
+
+  const handleNetworkChange = (e) => {
+    const chainId = e.target.value;
+    if (chainId) {
+      setSelectedNetwork(chainId);
+      switchNetwork(chainId);
+    }
+  };
+
+
+  // Conectar la wallet del usuario con la aplicación
   const connectWallet = async () => {
-    // Verificamos si MetaMask está instalado en el navegador
+
     if (window.ethereum) {
       try {
         setLoading(true);
-        // Creamos un proveedor de Ethereum usando ethers.js
+
         const provider = new ethers.BrowserProvider(window.ethereum);
 
-        // Solicitamos a MetaMask que nos dé acceso a las cuentas del usuario
         const accounts = await provider.send("eth_requestAccounts", []);
-
-        // Guardamos la primera cuenta obtenida en el estado
         setAccount(accounts[0]);
 
-        // Obtenemos y guardamos el saldo de la cuenta
         const balance = await provider.getBalance(accounts[0]);
         setBalance(ethers.formatEther(balance));
         
+        await checkNetwork();
+        
         setLoading(false);
       } catch (error) {
-        // Capturamos y mostramos cualquier error en la consola
         console.error("Error al conectar MetaMask", error);
         setLoading(false);
       }
     } else {
-      // Si MetaMask no está instalado, mostramos un mensaje de alerta
       alert("MetaMask no está instalado.");
     }
   };
 
-  // Función para enviar ETH a otra dirección
+  // Enviar ETH a otra dirección
   const sendEth = async () => {
     if (!window.ethereum) {
       alert("MetaMask no está instalado.");
@@ -66,11 +195,9 @@ function App() {
       alert(`Transacción enviada! Hash: ${tx.hash}`);
       console.log("Transacción:", tx);
 
-      // Actualizar saldo después de la transacción
       const updatedBalance = await provider.getBalance(account);
       setBalance(ethers.formatEther(updatedBalance));
 
-      // Limpiar los inputs
       setRecipient("");
       setAmount("");
       setLoading(false);
@@ -83,17 +210,37 @@ function App() {
 
   return (
     <div style={styles.container}>
-      {/* Título de la aplicación */}
       <h1 style={styles.title}>Conectar MetaMask</h1>
 
-      {/* Mostrar interfaz según si hay cuenta conectada o no */}
       {account ? (
         <div style={styles.walletInfo}>
-          {/* Información de la cuenta */}
           <p style={styles.accountInfo}>Cuenta: {account}</p>
           <p style={styles.accountInfo}>Saldo: {balance} ETH</p>
+          <p style={styles.networkInfo}>Red actual: {currentNetwork}</p>
 
-          {/* Formulario para enviar ETH */}
+          <div style={styles.networkSelector}>
+            <h3 style={styles.networkTitle}>Cambiar Red</h3>
+            <select 
+              onChange={handleNetworkChange} 
+              style={styles.networkDropdown}
+              disabled={isNetworkSwitching}
+              value={selectedNetwork || ""}
+            >
+              <option value="">Selecciona una red</option>
+              {networks.map((network) => (
+                <option 
+                  key={network.chainId} 
+                  value={network.chainId}
+                >
+                  {network.name}
+                </option>
+              ))}
+            </select>
+            {isNetworkSwitching && (
+              <p style={styles.loadingText}>Cambiando red...</p>
+            )}
+          </div>
+
           <h2 style={styles.subtitle}>Enviar ETH</h2>
           <input
             type="text"
@@ -112,14 +259,13 @@ function App() {
           <button 
             onClick={sendEth} 
             style={styles.buttonSend}
-            disabled={loading}
+            disabled={loading || isNetworkSwitching}
           >
             {loading ? "Procesando..." : "Enviar ETH"}
           </button>
         </div>
       ) : (
         <div>
-          {/* Mensaje y botón para conectar */}
           <p style={styles.message}>Conecta tu wallet para enviar ETH</p>
           <button 
             onClick={connectWallet} 
@@ -160,6 +306,12 @@ const styles = {
     color: "#555",
     wordBreak: "break-all",
     marginBottom: "10px"
+  },
+  networkInfo: {
+    fontSize: "16px",
+    color: "#2962ff",
+    fontWeight: "bold",
+    marginBottom: "15px"
   },
   subtitle: {
     fontSize: "22px",
@@ -204,8 +356,34 @@ const styles = {
     transition: "background-color 0.3s",
     fontWeight: "bold",
     width: "100%"
+  },
+  networkSelector: {
+    marginTop: "25px",
+    padding: "15px",
+    backgroundColor: "#f0f0f0",
+    borderRadius: "8px",
+    border: "1px solid #ddd"
+  },
+  networkTitle: {
+    fontSize: "18px",
+    color: "#333",
+    marginBottom: "12px"
+  },
+  networkDropdown: {
+    width: "100%",
+    padding: "10px",
+    fontSize: "16px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+    backgroundColor: "#fff",
+    cursor: "pointer"
+  },
+  loadingText: {
+    fontSize: "14px",
+    color: "#666",
+    fontStyle: "italic",
+    margin: "8px 0 0 0"
   }
 };
 
-// Exportamos el componente para poder usarlo en la aplicación
 export default App;
